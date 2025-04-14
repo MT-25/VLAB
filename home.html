@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tablet Dissolution Simulation</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4fcff;
+      padding: 20px;
+    }
+    .section {
+      margin-bottom: 20px;
+    }
+    label, select, input {
+      margin: 10px;
+    }
+    canvas {
+      background: #fff;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Tablet Dissolution Simulation</h2>
+
+<div class="section">
+  <label>Tablet Dose (mg):</label>
+  <input type="number" id="dose" value="100" min="10" max="1000">
+
+  <label>BCS Class:</label>
+  <select id="bcsClass">
+    <option value="1">Class I - High S/H P</option>
+    <option value="2">Class II - Low S / High P</option>
+    <option value="3">Class III - High S / Low P</option>
+    <option value="4">Class IV - Low S / Low P</option>
+  </select>
+</div>
+
+<div class="section">
+  <label>Dissolution Medium:</label>
+  <select id="media">
+    <option value="water">Water</option>
+    <option value="pH1.2">0.1N HCl (pH 1.2)</option>
+    <option value="pH4.5">Acetate Buffer (pH 4.5)</option>
+    <option value="pH6.8">Phosphate Buffer (pH 6.8)</option>
+  </select>
+
+  <label>Temperature (°C):</label>
+  <input type="range" id="temp" min="30" max="42" value="37" oninput="updateLabel('temp')">
+  <span id="temp-label">37°C</span>
+</div>
+
+<div class="section">
+  <label>Tablet Dosage Form:</label>
+  <select id="tabletForm">
+    <option value="immediate">Immediate Release</option>
+    <option value="sustained">Sustained Release</option>
+    <option value="controlled">Controlled Release</option>
+    <option value="pulsatile">Pulsatile Release</option>
+    <option value="delayed">Delayed Release</option>
+  </select>
+
+  <label>Dissolution Time (min):</label>
+  <input type="range" id="duration" min="10" max="180" value="120" oninput="updateLabel('duration')">
+  <span id="duration-label">120 min</span>
+</div>
+
+<div class="section">
+  <label>Release Model:</label>
+  <select id="model">
+    <option value="first">First-Order</option>
+    <option value="zero">Zero-Order</option>
+    <option value="higuchi">Higuchi</option>
+    <option value="hixson">Hixson-Crowell</option>
+    <option value="weibull">Weibull</option>
+  </select>
+
+  <label>Base Rate Constant (k):</label>
+  <input type="range" id="k" min="0.01" max="1" step="0.01" value="0.1" oninput="updateLabel('k')">
+  <span id="k-label">0.10</span>
+</div>
+
+<!-- New Polymer Section -->
+<div class="section">
+  <label>Polymer Type(s):</label>
+  <select id="polymerType" onchange="togglePolymerOptions()">
+    <option value="none">None</option>
+    <option value="hydrophilic">Hydrophilic</option>
+    <option value="hydrophobic">Hydrophobic</option>
+    <option value="combination">Combination (Hydrophilic + Hydrophobic)</option>
+  </select>
+
+  <label>Polymer Ratio (Hydrophilic : Hydrophobic):</label>
+  <input type="range" id="polymerRatio" min="0" max="100" value="50" disabled oninput="updateLabel('polymerRatio')">
+  <span id="polymerRatio-label">50 : 50</span>
+</div>
+
+<button onclick="simulate()">Simulate</button>
+
+<!-- Chart for Dissolution Curve -->
+<canvas id="dissChart" width="800" height="400"></canvas>
+
+<script>
+// Update labels dynamically when user adjusts sliders
+function updateLabel(id) {
+  const val = document.getElementById(id).value;
+  if (id === 'polymerRatio') {
+    document.getElementById(id + '-label').innerText = `${val} : ${100 - val}`;
+  } else {
+    document.getElementById(id + '-label').innerText = id === 'temp' ? `${val}°C` : `${val}`;
+  }
+}
+
+// Function to modify dissolution pattern based on selected tablet form
+function getTabletFormModifier(form) {
+  switch (form) {
+    case "immediate":
+      return { type: "Immediate Release", releasePattern: "quick" };
+    case "sustained":
+      return { type: "Sustained Release", releasePattern: "slow" };
+    case "controlled":
+      return { type: "Controlled Release", releasePattern: "plateau" };
+    case "pulsatile":
+      return { type: "Pulsatile Release", releasePattern: "pulses" };
+    case "delayed":
+      return { type: "Delayed Release", releasePattern: "delayed" };
+    default:
+      return { type: "Immediate Release", releasePattern: "quick" };
+  }
+}
+
+function getBCSModifier(classNum) {
+  switch (parseInt(classNum)) {
+    case 1: return 1.2;
+    case 2: return 0.9;
+    case 3: return 0.7;
+    case 4: return 0.5;
+    default: return 1.0;
+  }
+}
+
+function getMediaModifier(media) {
+  switch (media) {
+    case "pH1.2": return 1.2;
+    case "pH4.5": return 1.0;
+    case "pH6.8": return 0.9;
+    case "water": return 0.8;
+    default: return 1.0;
+  }
+}
+
+function getTemperatureModifier(temp) {
+  return 1 + (temp - 37) * 0.02;
+}
+
+// Handle polymer options toggle
+function togglePolymerOptions() {
+  const polymerType = document.getElementById('polymerType').value;
+  const polymerRatio = document.getElementById('polymerRatio');
+  if (polymerType === "combination") {
+    polymerRatio.disabled = false;
+  } else {
+    polymerRatio.disabled = true;
+  }
+}
+
+function simulate() {
+  const dose = parseFloat(document.getElementById('dose').value);
+  const kBase = parseFloat(document.getElementById('k').value);
+  const duration = parseInt(document.getElementById('duration').value);
+  const model = document.getElementById('model').value;
+  const bcsClass = document.getElementById('bcsClass').value;
+  const media = document.getElementById('media').value;
+  const temp = parseFloat(document.getElementById('temp').value);
+  const tabletForm = document.getElementById('tabletForm').value;
+  const polymerType = document.getElementById('polymerType').value;
+  const polymerRatio = parseInt(document.getElementById('polymerRatio').value);
+
+  const tabletMod = getTabletFormModifier(tabletForm);
+  const kMod = kBase *
+               getBCSModifier(bcsClass) *
+               getMediaModifier(media) *
+               getTemperatureModifier(temp) *
+               (100 / dose);  // Normalize for dose
+
+  let polymerEffect = 0;
+  if (polymerType === "hydrophilic") {
+    polymerEffect = 0.8;  // Accelerates dissolution
+  } else if (polymerType === "hydrophobic") {
+    polymerEffect = 0.5;  // Slows dissolution
+  } else if (polymerType === "combination") {
+    polymerEffect = 0.5 + (0.3 * polymerRatio / 100);  // Adjust based on ratio
+  }
+
+  const data = [];
+  for (let t = 0; t <= duration; t++) {
+    let percent = 0;
+    
+    // If delayed release, start after 2 hours (120 minutes)
+    if (tabletMod.releasePattern === "delayed" && t < 120) {
+      percent = 0;  // No release before 120 min
+    } else {
+      switch (model) {
+        case "first":
+          percent = 100 * (1 - Math.exp(-kMod * polymerEffect * t));
+          break;
+        case "zero":
+          percent = kMod * polymerEffect * t;
+          break;
+        case "higuchi":
+          percent = kMod * polymerEffect * Math.sqrt(t);
+          break;
+        case "hixson":
+          let mo = dose;
+          let mt = Math.pow(Math.pow(mo, 1/3) - kMod * polymerEffect * t, 3);
+          percent = 100 - ((mt / mo) * 100);
+          break;
+        case "weibull":
+          let alpha = 1.5, beta = 30;
+          percent = 100 * (1 - Math.exp(-Math.pow((kMod * polymerEffect * t / beta), alpha)));
+          break;
+      }
+
+      // Modify percent dissolution according to tablet form
+      switch (tabletMod.releasePattern) {
+        case "quick":
+          percent = Math.min(percent, 100);
+          break;
+        case "slow":
+          percent = 10 * (1 - Math.exp(-kMod * polymerEffect * t / 15)); // Slow steady release
+          break;
+        case "plateau":
+          if (t < 30) {
+            percent = 30 + 10 * t;
+          } else {
+            percent = 80; // Controlled release shows plateau
+          }
+          break;
+        case "pulses":
+          if (t % 20 < 10) {
+            percent = 50 * Math.sin((t / 20) * Math.PI);
+          } else {
+            percent = 0;
+          }
+          break;
+        case "delayed":
+          if (t > 120) { // Start after 120 minutes
+            // Proceed with regular dissolution after delay
+            percent = 100 * (1 - Math.exp(-kMod * polymerEffect * (t - 120) / 30)); // Delayed release after 120 min
+          }
+          break;
+      }
+    }
+
+    percent = Math.min(Math.max(percent, 0), 100);
+    data.push({ x: t, y: percent });
+  }
+
+  const ctx = document.getElementById('dissChart').getContext('2d');
+  if (window.chart) window.chart.destroy();
+
+  window.chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: `Release Pattern: ${tabletMod.type} with Polymer Effect`,
+        data: data,
+        borderColor: '#0066cc',
+        backgroundColor: 'rgba(0, 102, 204, 0.1)',
+        tension: 0.3,
+        pointRadius: 2
+      }]
+    },
+    options: {
+      scales: {
+        x: {
+          title: { display: true, text: 'Time (min)' },
+          type: 'linear',
+          min: 0,
+          max: duration
+        },
+        y: {
+          title: { display: true, text: 'Dissolution (%)' },
+          min: 0,
+          max: 100
+        }
+      },
+      plugins: {
+        title: {
+          display: true,
+          text: 'Simulated Dissolution Profile with Polymers'
+        }
+      }
+    }
+  });
+}
+</script>
+
+</body>
+</html>
